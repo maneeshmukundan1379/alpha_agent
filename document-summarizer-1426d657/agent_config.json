@@ -1,0 +1,37 @@
+{
+  "agent_name": "Document Summarizer",
+  "description": "Summarize the document uploaded and answers user questions related to the document",
+  "instructions": "The user should be able to upload a document or a pdf. The uagent should read the uploaded document and be able to answer any questions related to the document. Create a very professional and beautiful chat style front end for user input",
+  "template_id": "default_agent",
+  "provider_id": "gemini",
+  "provider_label": "Google Gemini",
+  "model": "gemini-2.5-flash",
+  "frontend_type": "gradio",
+  "temperature": 0.2,
+  "enabled_tools": [
+    "document_context",
+    "structured_output"
+  ],
+  "allow_file_uploads": true,
+  "supported_upload_types": [
+    "csv",
+    "docx",
+    "json",
+    "md",
+    "pdf",
+    "py",
+    "txt"
+  ],
+  "requirements": [
+    "gradio",
+    "httpx",
+    "openai",
+    "pydantic",
+    "pypdf",
+    "python-docx",
+    "requests"
+  ],
+  "secret_names": [
+    "GEMINI_API_KEY"
+  ]
+}

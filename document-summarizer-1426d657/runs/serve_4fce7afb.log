@@ -1,0 +1,16 @@
+Starting local UI: /Users/maneeshmukundan/projects/agents/2_openai/alpha_agent_builder/backend/.venv/bin/python app.py
+Port: 60794
+
+Traceback (most recent call last):
+  File "/Users/maneeshmukundan/projects/agents/2_openai/alpha_agent_builder/generated_agents/user_4/document-summarizer-1426d657/app.py", line 50, in <module>
+    demo = build_ui()
+           ^^^^^^^^^^
+  File "/Users/maneeshmukundan/projects/agents/2_openai/alpha_agent_builder/generated_agents/user_4/document-summarizer-1426d657/app.py", line 38, in build_ui
+    chat = gr.Chatbot(height=440, type="messages")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/maneeshmukundan/projects/agents/2_openai/alpha_agent_builder/backend/.venv/lib/python3.12/site-packages/gradio/component_meta.py", line 194, in wrapper
+    return fn(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+TypeError: Chatbot.__init__() got an unexpected keyword argument 'type'
+
+--- Server failed to start ---
