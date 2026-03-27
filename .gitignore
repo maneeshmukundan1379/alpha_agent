@@ -1,0 +1,12 @@
+frontend/node_modules/
+frontend/dist/
+.venv/
+**/.venv/
+generated_agents/*
+!generated_agents/.gitkeep
+repo_workdirs/
+*.db
+.env
+.env.*
+__pycache__/
+*.pyc
