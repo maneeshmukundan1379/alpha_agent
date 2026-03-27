@@ -1,0 +1,18 @@
+Starting local UI: /Users/maneeshmukundan/projects/agents/2_openai/alpha_agent_builder/backend/.venv/bin/python app.py
+Port: 53699
+
+/Users/maneeshmukundan/projects/agents/2_openai/alpha_agent_builder/generated_agents/user_4/redit-summarizer-a8b10223/app.py:27: UserWarning: The parameters have been moved from the Blocks constructor to the launch() method in Gradio 6.0: theme. Please pass these parameters to launch() instead.
+  with gr.Blocks(
+Traceback (most recent call last):
+  File "/Users/maneeshmukundan/projects/agents/2_openai/alpha_agent_builder/generated_agents/user_4/redit-summarizer-a8b10223/app.py", line 44, in <module>
+    demo = build_ui()
+           ^^^^^^^^^^
+  File "/Users/maneeshmukundan/projects/agents/2_openai/alpha_agent_builder/generated_agents/user_4/redit-summarizer-a8b10223/app.py", line 33, in build_ui
+    chat = gr.Chatbot(height=440, show_copy_button=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/maneeshmukundan/projects/agents/2_openai/alpha_agent_builder/backend/.venv/lib/python3.12/site-packages/gradio/component_meta.py", line 194, in wrapper
+    return fn(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+TypeError: Chatbot.__init__() got an unexpected keyword argument 'show_copy_button'
+
+--- Server failed to start ---

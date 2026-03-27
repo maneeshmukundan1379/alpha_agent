@@ -1,0 +1,52 @@
+{
+  "user_id": 4,
+  "agent_id": "document-summarizer-1426d657",
+  "agent_name": "Document Summarizer",
+  "description": "Summarize the document uploaded and answers user questions related to the document",
+  "instructions": "The user should be able to upload a document or a pdf. The uagent should read the uploaded document and be able to answer any questions related to the document. Create a very professional and beautiful chat style front end for user input",
+  "template_id": "default_agent",
+  "provider_id": "gemini",
+  "model": "gemini-2.5-flash",
+  "frontend_type": "gradio",
+  "temperature": 0.2,
+  "enabled_tools": [
+    "document_context",
+    "structured_output"
+  ],
+  "allow_file_uploads": true,
+  "supported_upload_types": [
+    "csv",
+    "docx",
+    "json",
+    "md",
+    "pdf",
+    "py",
+    "txt"
+  ],
+  "github_repo_url": "https://github.com/maneeshmukundan1379/alpha_agent.git",
+  "github_repo_path": "",
+  "github_commit_sha": "",
+  "agent_dir": "/Users/maneeshmukundan/projects/agents/2_openai/alpha_agent_builder/generated_agents/user_4/document-summarizer-1426d657",
+  "created_at": "2026-03-22T22:33:23.333949+00:00",
+  "has_secrets": true,
+  "requirements": [
+    "gradio",
+    "httpx",
+    "openai",
+    "pydantic",
+    "pypdf",
+    "python-docx",
+    "requests"
+  ],
+  "generated_files": [
+    "README.md",
+    "agent_config.json",
+    "app.py",
+    "logic.py",
+    "requirements.txt",
+    "run_agent.py",
+    "uploads/",
+    "uploads/.gitkeep"
+  ],
+  "generation_source": "template"
+}

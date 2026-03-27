@@ -1,0 +1,7 @@
+gradio
+httpx
+openai
+pydantic
+pypdf
+python-docx
+requests

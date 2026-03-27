@@ -1,0 +1,13 @@
+{
+  "run_id": "60c801c8cd",
+  "agent_id": "document-summarizer-1426d657",
+  "status": "completed",
+  "command": [
+    "/Users/maneeshmukundan/projects/agents/2_openai/alpha_agent_builder/backend/.venv/bin/python",
+    "app.py"
+  ],
+  "prompt": "(local web UI)",
+  "started_at": "2026-03-22T22:35:27.644201+00:00",
+  "finished_at": "2026-03-22T22:35:27.644201+00:00",
+  "log_path": "/Users/maneeshmukundan/projects/agents/2_openai/alpha_agent_builder/generated_agents/user_4/document-summarizer-1426d657/runs/serve_e0365266.log"
+}

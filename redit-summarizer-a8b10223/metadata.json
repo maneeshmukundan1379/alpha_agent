@@ -1,0 +1,46 @@
+{
+  "user_id": 4,
+  "agent_id": "redit-summarizer-a8b10223",
+  "agent_name": "Redit Summarizer",
+  "description": "An chat agent that scans reditt for messages",
+  "instructions": "Create a chat agent that accepts a keyword as input. On pressing the run agent, it should scroll reditt for the keyword for the past 1 week and display matching messages. Give only messages that have the matching keyword",
+  "template_id": "chat_assistant",
+  "provider_id": "gemini",
+  "model": "gemini-2.5-flash",
+  "frontend_type": "gradio",
+  "temperature": 0.2,
+  "enabled_tools": [
+    "document_context",
+    "structured_output"
+  ],
+  "allow_file_uploads": false,
+  "supported_upload_types": [
+    "csv",
+    "docx",
+    "json",
+    "md",
+    "pdf",
+    "py",
+    "txt"
+  ],
+  "github_repo_url": "",
+  "github_repo_path": "",
+  "github_commit_sha": "",
+  "agent_dir": "/Users/maneeshmukundan/projects/agents/2_openai/alpha_agent_builder/generated_agents/user_4/redit-summarizer-a8b10223",
+  "created_at": "2026-03-22T16:01:29.453720+00:00",
+  "has_secrets": true,
+  "requirements": [
+    "gradio",
+    "httpx",
+    "openai",
+    "pydantic"
+  ],
+  "generated_files": [
+    "README.md",
+    "agent_config.json",
+    "app.py",
+    "logic.py",
+    "requirements.txt",
+    "run_agent.py"
+  ]
+}
