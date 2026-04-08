@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from openai import OpenAI
+from openai import APIStatusError, OpenAI
 
 from .agent_diagnostics import collect_static_diagnostics
 from .generator import get_generated_agent
@@ -88,32 +88,116 @@ def _truncate_sources(files: dict[str, str]) -> tuple[dict[str, str], bool]:
     return trimmed, True
 
 
-def _build_openai_client(settings: dict[str, str]) -> tuple[OpenAI, str]:
+def _build_openai_client(settings: dict[str, str], *, provider_id: str) -> tuple[OpenAI, str]:
+    """Use the same provider the agent was generated with so model names and API match."""
     openai_key = (settings.get("openai_api_key") or "").strip()
     gemini_key = (settings.get("gemini_api_key") or "").strip()
-    if openai_key:
+    if provider_id == "openai":
+        if not openai_key:
+            raise ValueError(
+                "This agent uses OpenAI. Add OPENAI_API_KEY to your Environment file to use Edit/fix agent.",
+            )
         return OpenAI(api_key=openai_key), "openai"
-    if gemini_key:
+    if provider_id == "gemini":
+        if not gemini_key:
+            raise ValueError(
+                "This agent uses Gemini. Add GEMINI_API_KEY or GOOGLE_API_KEY to your Environment file to use Edit/fix agent.",
+            )
         return OpenAI(
             api_key=gemini_key,
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         ), "gemini"
-    raise ValueError("Add an OpenAI or Gemini API key in Settings to use AI refine.")
+    raise ValueError(f"Unknown provider for Edit/fix agent: {provider_id!r}")
+
+
+def _raise_clear_llm_error(exc: Exception, *, provider_label: str) -> None:
+    """Translate opaque provider errors into actionable messages."""
+    blob = str(exc)
+    body = getattr(exc, "body", None)
+    if body is not None:
+        blob += f" {body!s}"
+
+    if provider_label == "gemini" and (
+        "API_KEY_SERVICE_BLOCKED" in blob
+        or ("PERMISSION_DENIED" in blob and "generativelanguage" in blob.lower())
+        or ("403" in blob and "blocked" in blob.lower() and "google" in blob.lower())
+    ):
+        raise ValueError(
+            "Google is blocking the Generative Language API for this API key (often "
+            "API_KEY_SERVICE_BLOCKED). Fix it in Google Cloud: open the project that owns the key, "
+            "go to APIs & Services → Library, enable Generative Language API; under Credentials, "
+            "ensure the key is not restricted away from that API. "
+            "Or create a key at https://aistudio.google.com/apikey (AI Studio). "
+            "Alternatively, generate a new agent with OpenAI as the LLM and set OPENAI_API_KEY in your Environment file.",
+        ) from exc
+
+    if isinstance(exc, APIStatusError):
+        code = getattr(exc.response, "status_code", None) if exc.response is not None else None
+        raise RuntimeError(f"LLM request failed ({code}): {exc.message}") from exc
+
+    raise RuntimeError(f"LLM request failed: {exc}") from exc
 
 
 def _parse_model_json(raw: str) -> dict[str, Any]:
+    """Parse edit-agent JSON; tolerate markdown fences, BOM, and leading/trailing prose."""
     raw = raw.strip()
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        pass
-    m = re.search(r"\{[\s\S]*\}\s*$", raw)
-    if m:
+    if not raw:
+        raise ValueError("Model did not return valid JSON.")
+
+    if raw.startswith("\ufeff"):
+        raw = raw[1:].strip()
+
+    candidates: list[str] = [raw]
+    fence = re.match(r"^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$", raw, re.IGNORECASE)
+    if fence:
+        inner = fence.group(1).strip()
+        if inner:
+            candidates.append(inner)
+    if raw.startswith("```"):
+        stripped = re.sub(r"^```(?:json)?\s*", "", raw, count=1, flags=re.IGNORECASE)
+        stripped = re.sub(r"\s*```\s*$", "", stripped, count=1).strip()
+        if stripped and stripped not in candidates:
+            candidates.append(stripped)
+
+    decoder = json.JSONDecoder()
+
+    def _looks_like_edit_payload(d: dict[str, Any]) -> bool:
+        return "assistant_message" in d or "files" in d
+
+    def _try_one(s: str) -> dict[str, Any] | None:
+        s = s.strip()
+        if not s:
+            return None
         try:
-            return json.loads(m.group(0))
+            data = json.loads(s)
+            if isinstance(data, dict):
+                return data
+            return None
         except json.JSONDecodeError:
             pass
-    raise ValueError("Model did not return valid JSON.")
+        for i, ch in enumerate(s):
+            if ch != "{":
+                continue
+            try:
+                data, _end = decoder.raw_decode(s[i:])
+                if isinstance(data, dict) and _looks_like_edit_payload(data):
+                    return data
+            except json.JSONDecodeError:
+                continue
+        return None
+
+    seen: set[str] = set()
+    for cand in candidates:
+        if cand in seen:
+            continue
+        seen.add(cand)
+        parsed = _try_one(cand)
+        if parsed is not None:
+            return parsed
+
+    raise ValueError(
+        "Model did not return valid JSON. Try a shorter instruction, or split UI changes into smaller steps."
+    )
 
 
 def _log_ts() -> str:
@@ -162,8 +246,9 @@ def apply_agent_edits(
     if was_truncated:
         trace("Truncated large files to fit editor context budget (see system note to model).")
 
-    client, provider_label = _build_openai_client(settings)
-    model = (metadata.model or "gpt-4o-mini").strip()
+    client, provider_label = _build_openai_client(settings, provider_id=str(metadata.provider_id))
+    default_model = "gpt-4o-mini" if metadata.provider_id == "openai" else "gemini-2.5-flash"
+    model = (metadata.model or default_model).strip()
     trace(f"Calling LLM ({provider_label}, model={model!r}) with JSON response…")
 
     last_user = ""
@@ -247,7 +332,10 @@ Rules:
         trace("LLM returned (json_object mode).")
     except Exception:
         trace("json_object mode failed; retrying without response_format.")
-        response = client.chat.completions.create(**chat_kw)
+        try:
+            response = client.chat.completions.create(**chat_kw)
+        except Exception as second_exc:
+            _raise_clear_llm_error(second_exc, provider_label=provider_label)
     raw = (response.choices[0].message.content or "").strip()
     if not raw:
         raise RuntimeError("Empty model response.")
