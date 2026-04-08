@@ -138,8 +138,69 @@ def _raise_clear_llm_error(exc: Exception, *, provider_label: str) -> None:
     raise RuntimeError(f"LLM request failed: {exc}") from exc
 
 
+def _fenced_json_candidates(text: str) -> list[str]:
+    """Pull ``` / ```json blocks from anywhere in the reply (models often add prose before/after)."""
+    out: list[str] = []
+    for m in re.finditer(r"```(?:json)?\s*([\s\S]*?)```", text, re.IGNORECASE):
+        inner = (m.group(1) or "").strip()
+        if inner:
+            out.append(inner)
+    return out
+
+
+def _balanced_brace_object(text: str, start: int) -> str | None:
+    """Slice one balanced {...} from text[start] (must be '{'); respects JSON string rules for depth."""
+    if start >= len(text) or text[start] != "{":
+        return None
+    depth = 0
+    i = start
+    in_str = False
+    esc = False
+    while i < len(text):
+        c = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+            i += 1
+            continue
+        if c == '"':
+            in_str = True
+            i += 1
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+        i += 1
+    return None
+
+
+def _iter_balanced_objects(text: str) -> list[str]:
+    seen: set[str] = set()
+    blobs: list[str] = []
+    for i, ch in enumerate(text):
+        if ch != "{":
+            continue
+        blob = _balanced_brace_object(text, i)
+        if blob and blob not in seen:
+            seen.add(blob)
+            blobs.append(blob)
+    blobs.sort(key=len, reverse=True)
+    return blobs
+
+
+def _looks_like_edit_payload(d: dict[str, Any]) -> bool:
+    return "assistant_message" in d or "files" in d
+
+
 def _parse_model_json(raw: str) -> dict[str, Any]:
-    """Parse edit-agent JSON; tolerate markdown fences, BOM, and leading/trailing prose."""
+    """Parse edit-agent JSON; tolerate prose, fenced blocks, and embedded objects."""
     raw = raw.strip()
     if not raw:
         raise ValueError("Model did not return valid JSON.")
@@ -148,11 +209,14 @@ def _parse_model_json(raw: str) -> dict[str, Any]:
         raw = raw[1:].strip()
 
     candidates: list[str] = [raw]
-    fence = re.match(r"^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$", raw, re.IGNORECASE)
-    if fence:
-        inner = fence.group(1).strip()
+    fence_full = re.match(r"^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$", raw, re.IGNORECASE)
+    if fence_full:
+        inner = fence_full.group(1).strip()
         if inner:
             candidates.append(inner)
+    for block in _fenced_json_candidates(raw):
+        if block not in candidates:
+            candidates.append(block)
     if raw.startswith("```"):
         stripped = re.sub(r"^```(?:json)?\s*", "", raw, count=1, flags=re.IGNORECASE)
         stripped = re.sub(r"\s*```\s*$", "", stripped, count=1).strip()
@@ -161,20 +225,22 @@ def _parse_model_json(raw: str) -> dict[str, Any]:
 
     decoder = json.JSONDecoder()
 
-    def _looks_like_edit_payload(d: dict[str, Any]) -> bool:
-        return "assistant_message" in d or "files" in d
-
-    def _try_one(s: str) -> dict[str, Any] | None:
+    def _parse_dict_from_string(s: str) -> dict[str, Any] | None:
         s = s.strip()
         if not s:
             return None
         try:
             data = json.loads(s)
-            if isinstance(data, dict):
-                return data
-            return None
+            return data if isinstance(data, dict) else None
         except json.JSONDecodeError:
             pass
+        for blob in _iter_balanced_objects(s):
+            try:
+                data = json.loads(blob)
+                if isinstance(data, dict) and _looks_like_edit_payload(data):
+                    return data
+            except json.JSONDecodeError:
+                continue
         for i, ch in enumerate(s):
             if ch != "{":
                 continue
@@ -184,19 +250,26 @@ def _parse_model_json(raw: str) -> dict[str, Any]:
                     return data
             except json.JSONDecodeError:
                 continue
+        for blob in _iter_balanced_objects(s):
+            try:
+                data = json.loads(blob)
+                if isinstance(data, dict):
+                    return data
+            except json.JSONDecodeError:
+                continue
         return None
 
-    seen: set[str] = set()
+    seen_c: set[str] = set()
     for cand in candidates:
-        if cand in seen:
+        if cand in seen_c:
             continue
-        seen.add(cand)
-        parsed = _try_one(cand)
+        seen_c.add(cand)
+        parsed = _parse_dict_from_string(cand)
         if parsed is not None:
             return parsed
 
     raise ValueError(
-        "Model did not return valid JSON. Try a shorter instruction, or split UI changes into smaller steps."
+        "Model did not return valid JSON. Try one file at a time (e.g. only App.tsx), or a smaller UI change."
     )
 
 
@@ -277,6 +350,7 @@ You may ONLY suggest changes by returning JSON (no markdown fences). Shape:
 
 Rules:
 - Include "files" only for files you actually changed. Each value must be the COMPLETE file text.
+- For React/UI tweaks, prefer changing ONE file per reply so the JSON stays small and valid.
 - Only these path keys are allowed in "files" (use forward slashes exactly as listed): {allowed_list!r}
 - Python: preserve working imports, env vars (OPENAI_API_KEY, ALPHA_AGENT_PORT, etc.), and valid syntax.
 - React/Vite: preserve API base URL behavior (VITE_API_URL / fetch to the FastAPI backend in main.py). Keep TypeScript and JSX valid.
@@ -323,6 +397,7 @@ Rules:
             {"role": "system", "content": system},
             {"role": "user", "content": user_block},
         ],
+        "max_tokens": 16384,
     }
     try:
         response = client.chat.completions.create(
@@ -341,7 +416,37 @@ Rules:
         raise RuntimeError("Empty model response.")
 
     trace(f"Parsed model output ({len(raw):,} chars).")
-    data = _parse_model_json(raw)
+    try:
+        data = _parse_model_json(raw)
+    except ValueError as parse_exc:
+        trace(f"JSON parse failed ({parse_exc}); retrying once with JSON-only instruction.")
+        strict_system = (
+            system
+            + '\n\nYour last reply could not be parsed. Respond with ONLY one JSON object with keys '
+            '"assistant_message" and optional "files". No markdown fences, no text before or after the object.'
+        )
+        retry_kw = {
+            **chat_kw,
+            "messages": [
+                {"role": "system", "content": strict_system},
+                {"role": "user", "content": user_block},
+            ],
+            "temperature": 0.0,
+        }
+        try:
+            response2 = client.chat.completions.create(
+                **retry_kw,
+                response_format={"type": "json_object"},
+            )
+            trace("Retry LLM returned (json_object mode).")
+        except Exception:
+            response2 = client.chat.completions.create(**retry_kw)
+            trace("Retry LLM returned (no response_format).")
+        raw = (response2.choices[0].message.content or "").strip()
+        if not raw:
+            raise parse_exc
+        trace(f"Retry model output ({len(raw):,} chars).")
+        data = _parse_model_json(raw)
     trace("Extracted JSON payload (assistant_message + optional files).")
     assistant_message = str(data.get("assistant_message") or "").strip()
     if not assistant_message:
